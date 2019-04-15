@@ -1,11 +1,11 @@
 # coding=utf-8
 import datetime
-from nwpc_hpc_model.loadleveler.filter_condition import \
+from nwpc_hpc_model.workload.filter_condition import \
     PropertyFilterCondition, \
     create_less_value_checker, \
     create_in_value_checker, \
     get_property_data
-from nwpc_hpc_model.loadleveler.filter import Filter
+from nwpc_hpc_model.workload.filter import Filter
 
 
 def get_datetime_data(job_item, property_id):

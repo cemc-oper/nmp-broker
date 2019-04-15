@@ -1,5 +1,5 @@
 # coding: utf-8
-from nwpc_workflow_model.ecflow.node_status import NodeStatus
+from nwpc_workflow_model.node_status import NodeStatus
 
 
 def mock_has_error_task(owner, repo):

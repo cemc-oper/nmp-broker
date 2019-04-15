@@ -2,7 +2,7 @@
 import json
 from collections import defaultdict
 from nmp_broker.plugins.loadleveler import loadleveler_filter
-from nwpc_hpc_model.loadleveler.filter_condition import get_property_data
+from nwpc_hpc_model.workload.filter_condition import get_property_data
 
 from nmp_broker.common.database import redis_client
 
