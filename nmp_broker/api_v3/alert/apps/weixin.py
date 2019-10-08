@@ -9,7 +9,7 @@ REQUEST_POST_TIME_OUT = 20
 
 @api_v3_app.route('/alert/apps/weixin/access_token/get', methods=['GET'])
 def get_weixin_access_token():
-    auth = weixin.Auth(current_app.config['BROKER_CONFIG']['weixin_app']['token'])
+    auth = weixin.Auth(current_app.config['BROKER_CONFIG']['weixin_app'])
     result = auth.get_access_token_from_server()
-    print(result)
+    current_app.logger.info(result)
     return jsonify(result)

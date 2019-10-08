@@ -4,7 +4,11 @@ import requests
 from flask import json, current_app
 from collections import defaultdict
 
-from nmp_broker.common.data_store.redis.alert import save_weixin_access_token_to_cache, get_weixin_access_token_from_cache
+from nmp_broker.common.data_store.redis.alert import (
+    save_weixin_access_token_to_cache,
+    get_weixin_access_token_from_cache,
+)
+
 
 REQUEST_POST_TIME_OUT = 20
 
@@ -14,75 +18,102 @@ class Auth(object):
         """
         :param config:
             {
-                "name": "TokenConfig",
+                "name": "WeixinAppConfig",
                 "type": "record",
                 "fields": [
-                    {"name": "corp_id", type: "string"},
-                    {"name": "corp_secret", type: "string"},
-                    {"name": "url", type: "string"},
+                    {
+                        name: "token",
+                        type: dict,
+                        fields: {
+                            {"name": "corp_id", type: "string"},
+                            {"name": "url", type: "string"},
+                        }
+                    }
+                    {
+                        name: "apps",
+                        type: dict,
+                        fields: [
+                            {"name": "name", type: "string"},
+                            {"name": "type", type: "string"},
+                            {"name": "agentid", type: "string"},
+                            {"name": "corp_secret", type: "string"},
+                        ]
+                    }
                 ]
             }
         :return:
         """
+        self.corp_id = config['token']['corp_id']
+        self.url = config['token']['url']
+        self.apps = config['apps']
 
-        self.corp_id = config['corp_id']
-        self.corp_secret = config['corp_secret']
-        self.url = config['url']
+    def get_access_token_from_server(self) -> list:
+        token_results = []
+        for weixin_app in self.apps:
+            name = weixin_app["name"]
+            corp_secret = weixin_app["corp_secret"]
+            headers = {'content-type': 'application/json'}
+            url = self.url.format(
+                corp_id=self.corp_id, corp_secret=corp_secret
+            )
 
-    def get_access_token_from_server(self) -> dict:
-        headers = {'content-type': 'application/json'}
-        url = self.url.format(
-            corp_id=self.corp_id, corp_secret=self.corp_secret
-        )
+            token_response = requests.get(
+                url,
+                verify=False,
+                headers=headers,
+                timeout=REQUEST_POST_TIME_OUT
+            )
 
-        token_response = requests.get(
-            url,
-            verify=False,
-            headers=headers,
-            timeout=REQUEST_POST_TIME_OUT
-        )
+            response_json = token_response.json()
+            current_app.logger.info(response_json)
+            if response_json['errcode'] == 0:
+                access_token = response_json['access_token']
+                save_weixin_access_token_to_cache(name, access_token)
+                result = {
+                    'name': name,
+                    'status': 'ok',
+                    'access_token': access_token
+                }
+            else:
+                result = {
+                    'name': name,
+                    'status': 'error',
+                    'errcode': response_json['errcode'],
+                    'errmsg': response_json['errmsg']
+                }
+            token_results.append(result)
 
-        response_json = token_response.json()
-        print(response_json)
-        if response_json['errcode'] == 0:
-            access_token = response_json['access_token']
-            save_weixin_access_token_to_cache(access_token)
-            result = {
-                'status': 'ok',
-                'access_token': access_token
-            }
-        else:
-            result = {
-                'status': 'error',
-                'errcode': response_json['errcode'],
-                'errmsg': response_json['errmsg']
-            }
+        return token_results
 
-        return result
+    @classmethod
+    def get_access_token_from_cache(cls, app_name: str) -> str:
+        return get_weixin_access_token_from_cache(app_name)
 
-    def get_access_token_from_cache(self) -> str:
-        return get_weixin_access_token_from_cache()
+    @classmethod
+    def save_access_token_to_cache(cls, app_name: str, access_token: str) -> None:
+        return save_weixin_access_token_to_cache(app_name, access_token)
 
-    def save_access_token_to_cache(self, access_token: str) -> None:
-        return save_weixin_access_token_to_cache(access_token)
-
-    def get_access_token(self) -> str:
-        weixin_access_token = get_weixin_access_token_from_cache()
-        if weixin_access_token is None:
-            self.get_access_token_from_server()
-            weixin_access_token = get_weixin_access_token_from_cache()
-        return weixin_access_token
+    def get_access_token(self) -> dict:
+        tokens = dict()
+        for weixin_app in self.apps:
+            name = weixin_app['name']
+            weixin_access_token = get_weixin_access_token_from_cache(name)
+            if weixin_access_token is None:
+                self.get_access_token_from_server()
+                weixin_access_token = get_weixin_access_token_from_cache(name)
+            tokens[name] = weixin_access_token
+        return tokens
 
 
 class WeixinApp(object):
     def __init__(self, weixin_config:dict, cloud_config:dict):
         self.weixin_config = weixin_config
         self.cloud_config = cloud_config
+        self.auth = Auth(self.weixin_config)
 
-        self.auth = Auth(self.weixin_config['token'])
-
-    def send_warning_message(self, warning_data: dict):
+    def send_warning_message(self, weixin_app: dict, warning_data: dict):
         """
+        :param weixin_app: config for weixin app
         :param warning_data:
             {
                 "name": "WarningData",
@@ -100,18 +131,12 @@ class WeixinApp(object):
         :return:
         """
         # TODO: change server_name
+        app_name = weixin_app["name"]
         owner = warning_data['owner']
         repo = warning_data['repo']
         current_app.logger.info('[{owner}/{repo}] get error task. Pushing warning message to weixin...'.format(
             owner=owner, repo=repo
         ))
-
-        auth = Auth(self.weixin_config['token'])
-        weixin_access_token = auth.get_access_token()
-
-        warning_post_url = self.weixin_config['warn']['url'].format(
-            weixin_access_token=weixin_access_token
-        )
 
         if warning_data['aborted_tasks_blob_id']:
             message_url = (self.cloud_config['base']['url'] + '/{owner}/{repo}/aborted_tasks/{id}').format(
@@ -166,39 +191,21 @@ class WeixinApp(object):
             }
         ]
 
-        to_user = self.weixin_config['warn']['to_user']
-
         warning_post_message = {
-            "touser": to_user,
             "agentid": 2,
             "msgtype": "news",
             "news": {
                 "articles": articles
             }
         }
-        warning_post_headers = {
-            'content-type': 'application/json'
-        }
-        warning_post_data = json.dumps(warning_post_message,ensure_ascii=False).encode('utf8')
 
-        result = requests.post(
-            warning_post_url,
-            data=warning_post_data,
-            verify=False,
-            headers=warning_post_headers,
-            timeout=REQUEST_POST_TIME_OUT
-        )
-        current_app.logger.info('[{owner}/{repo}] Pushing warning message to weixin...done. {result}'.format(
-            owner=owner, repo=repo, result=result.json()
-        ))
+        target = weixin_app['target']
+        warning_post_message.update(target)
 
-    def send_sms_node_task_warn(self, message):
-        auth = Auth(self.weixin_config['token'])
-        weixin_access_token = auth.get_access_token()
+        self._send_message(app_name, warning_post_message)
 
-        warning_post_url = self.weixin_config['warn']['url'].format(
-            weixin_access_token=weixin_access_token
-        )
+    def send_sms_node_task_warn(self, weixin_app: dict, message: dict):
+        app_name = weixin_app["name"]
 
         node_list_content = ''
         for a_unfit_node in message['data']['unfit_nodes']:
@@ -218,7 +225,6 @@ class WeixinApp(object):
             repo=message['data']['repo'],
             id=message['data']['unfit_nodes_blob_id']
         )
-        to_user = self.weixin_config['warn']['to_user']
 
         articles = [
             {
@@ -254,35 +260,20 @@ class WeixinApp(object):
         ]
 
         warning_post_message = {
-            "touser": to_user,
             "agentid": 2,
             "msgtype": "news",
             "news": {
                 "articles": articles
             }
         }
+        target = weixin_app['target']
+        warning_post_message.update(target)
 
-        warning_post_headers = {
-            'content-type': 'application/json'
-        }
-        warning_post_data = json.dumps(warning_post_message, ensure_ascii=False).encode('utf8')
+        self._send_message(app_name, warning_post_message)
 
-        result = requests.post(
-            warning_post_url,
-            data=warning_post_data,
-            verify=False,
-            headers=warning_post_headers,
-            timeout=REQUEST_POST_TIME_OUT
-        )
-        print(result.json())
+    def send_sms_node_task_message(self, weixin_app: dict, message_data):
+        app_name = weixin_app["name"]
 
-    def send_sms_node_task_message(self, message_data):
-        auth = Auth(self.weixin_config['token'])
-        weixin_access_token = auth.get_access_token()
-
-        post_url = self.weixin_config['warn']['url'].format(
-            weixin_access_token=weixin_access_token
-        )
         message_url = (self.cloud_config['base']['url'] + '/{owner}/{repo}/task_check/unfit_nodes/{id}').format(
             owner=message_data['owner'],
             repo=message_data['repo']
@@ -315,31 +306,25 @@ class WeixinApp(object):
             }
         ]
 
-        to_user = self.weixin_config['warn']['to_user']
         post_message = {
-            "touser": to_user,
             "agentid": 2,
             "msgtype": "news",
             "news": {
                 "articles": articles
             }
         }
+        target = weixin_app['target']
+        post_message.update(target)
 
-        post_headers = {
-            'content-type': 'application/json'
-        }
-        post_data = json.dumps(post_message, ensure_ascii=False).encode('utf8')
+        self._send_message(app_name, post_message)
 
-        result = requests.post(
-            post_url,
-            data=post_data,
-            verify=False,
-            headers=post_headers,
-            timeout=REQUEST_POST_TIME_OUT
-        )
-        print(result.json())
-
-    def send_loadleveler_status_warning_message(self, user, plugin_check_result, abnormal_jobs_blob_id):
+    def send_loadleveler_status_warning_message(
+            self,
+            weixin_app: dict,
+            user,
+            plugin_check_result,
+            abnormal_jobs_blob_id):
+        app_name = weixin_app["name"]
         text = ""
         for a_owner in plugin_check_result['data']['categorized_result']:
             text += "\n{owner}:{number}".format(
@@ -367,24 +352,27 @@ class WeixinApp(object):
                 "title": "异常用户:" + text,
                 "url": message_url
             }
+
         ]
-        to_user = self.weixin_config['warn']['to_user']
         post_message = {
-            "touser": to_user,
             "agentid": 2,
             "msgtype": "news",
             "news": {
                 "articles": articles
             }
         }
-        self.send_message(post_message)
 
-    def send_message(self, message):
-        auth = Auth(self.weixin_config['token'])
-        weixin_access_token = auth.get_access_token()
+        target = weixin_app['target']
+        post_message.update(target)
+
+        self._send_message(app_name, post_message)
+
+    def _send_message(self, app_name: str, message: dict):
+        auth = Auth(self.weixin_config)
+        tokens = auth.get_access_token()
 
         post_url = self.weixin_config['warn']['url'].format(
-            weixin_access_token=weixin_access_token
+            weixin_access_token=tokens[app_name]
         )
         post_headers = {
             'content-type': 'application/json'
@@ -398,4 +386,4 @@ class WeixinApp(object):
             headers=post_headers,
             timeout=REQUEST_POST_TIME_OUT
         )
-        print(result.json())
+        current_app.logger.info(result.json())
