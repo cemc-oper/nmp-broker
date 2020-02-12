@@ -5,6 +5,7 @@ import gzip
 import requests
 from flask import request, json, jsonify, current_app
 
+import nmp_broker.common.weixin.weixin_app
 from nmp_broker.api_v2 import api_v2_app
 from nmp_broker.api_v2.api_hpc import REQUEST_POST_TIME_OUT
 from nmp_broker.common import data_store, weixin
@@ -121,7 +122,7 @@ def receive_loadleveler_status(user):
                 )
                 print(response)
 
-                weixin_app = weixin.WeixinApp(
+                weixin_app = nmp_broker.common.weixin.weixin_app.WeixinApp(
                     weixin_config=current_app.config['BROKER_CONFIG']['weixin_app'],
                     cloud_config=current_app.config['BROKER_CONFIG']['cloud']
                 )

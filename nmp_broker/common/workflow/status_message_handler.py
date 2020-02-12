@@ -7,7 +7,8 @@ import requests
 from flask import json, current_app
 
 from nmp_model.mongodb.blobs.workflow.aborted_tasks import AbortedTasksBlob
-from nmp_broker.common import weixin
+
+import nmp_broker.common.weixin.weixin_app
 from nmp_broker.common.data_store.redis import workflow as redis_workflow
 from nmp_broker.common.data_store.mongodb import workflow as mongodb_workflow
 from nmp_broker.common.workflow.status_strategy import (
@@ -134,7 +135,7 @@ def handle_status_message(owner: str, repo: str, message_data: dict, message_app
                 #
                 # ding_talk_app.send_warning_message(warning_data)
 
-                weixin_app = weixin.WeixinApp(
+                weixin_app = nmp_broker.common.weixin.weixin_app.WeixinApp(
                     weixin_config=current_app.config['BROKER_CONFIG']['weixin_app'],
                     cloud_config=current_app.config['BROKER_CONFIG']['cloud']
                 )

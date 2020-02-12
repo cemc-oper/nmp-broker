@@ -7,7 +7,9 @@ from flask import current_app, json
 
 from nmp_model.mongodb.blobs.workload.abnormal_jobs import AbnormalJobsBlob
 from nmp_model.mongodb.cache.workload_cache import JobListContent
-from nmp_broker.common import data_store, weixin
+
+import nmp_broker.common.weixin.weixin_app
+from nmp_broker.common import data_store
 from nmp_broker.plugins.loadleveler import long_time_operation_job_warn
 
 
@@ -113,7 +115,7 @@ def handle_loadleveler_jobs(owner, repo, message):
             )
             current_app.logger.info("post workload alert to weixin...{response}".format(response=response))
 
-            weixin_app = weixin.WeixinApp(
+            weixin_app = nmp_broker.common.weixin.weixin_app.WeixinApp(
                 weixin_config=current_app.config['BROKER_CONFIG']['weixin_app'],
                 cloud_config=current_app.config['BROKER_CONFIG']['cloud']
             )

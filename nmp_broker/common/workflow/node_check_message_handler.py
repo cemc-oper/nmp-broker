@@ -5,6 +5,7 @@ import gzip
 import requests
 from flask import current_app, json
 
+import nmp_broker.common.weixin.weixin_app
 from nmp_broker.common import data_store
 
 from nmp_model.mongodb.blobs.workflow.unfit_nodes import UnfitNodesBlob
@@ -167,7 +168,7 @@ def handle_node_check_message(owner, repo, message_data: dict) -> None:
         current_app.logger.info("[{owner}/{repo}] Sending alert...".format(
             owner=owner, repo=repo, response=response))
 
-        weixin_app = weixin.WeixinApp(
+        weixin_app = nmp_broker.common.weixin.weixin_app.WeixinApp(
             weixin_config=current_app.config['BROKER_CONFIG']['weixin_app'],
             cloud_config=current_app.config['BROKER_CONFIG']['cloud']
         )
