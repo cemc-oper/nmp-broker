@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 setup(
     name='nmp-broker',
 
-    version='4.0.0',
+    version='1.0.0',
 
     description='A broker for NWPC monitor platform.',
     long_description=__doc__,
